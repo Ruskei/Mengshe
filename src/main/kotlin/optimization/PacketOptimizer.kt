@@ -102,13 +102,15 @@ fun optimize(
     }
 
     val displayIndices = mutableListOf<Int>()
-    displayIndices += displayPath.size - 1
+    if (displayData.isNotEmpty()) {
+        displayIndices += displayPath.size - 1
 
-    var n = displayPath[displayPath.size - 1]
-    do {
-        displayIndices.addFirst(n)
-        n = displayPath[n]
-    } while (n != -1)
+        var n = displayPath[displayPath.size - 1]
+        do {
+            displayIndices.addFirst(n)
+            n = displayPath[n]
+        } while (n != -1)
+    }
 
     return OptimizedPath(posIndices.actualizePositions(ptol, posData), displayIndices.actualizeDisplayData(stol, displayData))
 }
@@ -190,6 +192,8 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
 }
 
 fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<TimestampedDisplayData>): List<Int> {
+    if (isEmpty()) return emptyList()
+    
     val out = mutableListOf<Int>()
     var i = 0
     while (i < size - 1) {
