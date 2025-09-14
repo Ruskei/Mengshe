@@ -112,7 +112,10 @@ fun optimize(
         } while (n != -1)
     }
 
-    return OptimizedPath(posIndices.actualizePositions(ptol, posData), displayIndices.actualizeDisplayData(stol, displayData))
+    return OptimizedPath(
+        posIndices.actualizePositions(ptol, posData),
+        displayIndices.actualizeDisplayData(stol, displayData)
+    )
 }
 
 fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedPos>): List<Int> {
@@ -193,7 +196,7 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
 
 fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<TimestampedDisplayData>): List<Int> {
     if (isEmpty()) return emptyList()
-    
+
     val out = mutableListOf<Int>()
     var i = 0
     while (i < size - 1) {
@@ -225,7 +228,11 @@ fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<Timestam
                     while (k < j + t) {
                         val f = (k - j) / t.toDouble()
                         val p = displayData[k]
-                        val d = p.distance((e.scale - s.scale) * f + s.scale)
+                        val d = p.distance(
+                            (e.scaleX - s.scaleX) * f + s.scaleX,
+                            (e.scaleY - s.scaleY) * f + s.scaleY,
+                            (e.scaleZ - s.scaleZ) * f + s.scaleZ,
+                        )
 
                         if (d > tolerance) {
                             valid = false
@@ -371,7 +378,11 @@ fun List<TimestampedDisplayData>.regionCost(
                 while (k < j + t) {
                     val f = (k - j) / t.toDouble()
                     val p = this[k]
-                    val d = p.distance((e.scale - s.scale) * f + s.scale)
+                    val d = p.distance(
+                        (e.scaleX - s.scaleX) * f + s.scaleX,
+                        (e.scaleY - s.scaleY) * f + s.scaleY,
+                        (e.scaleZ - s.scaleZ) * f + s.scaleZ,
+                    )
 
                     if (d > tolerance) {
                         valid = false
