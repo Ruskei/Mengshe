@@ -15,21 +15,13 @@ fun main() {
         TimestampedPos(0, 0.0, 2.0, 0.0),
         TimestampedPos(0, 0.0, 3.0, 0.0),
         TimestampedPos(0, 0.0, 4.0, 0.0),
-        TimestampedPos(0, 0.0, 5.0, 0.0),
-        TimestampedPos(0, 0.0, 6.0, 0.0),
-        TimestampedPos(0, 0.0, 0.0, 0.0),
-        TimestampedPos(0, 0.0, 9.0, 0.0),
     )
 
     val display = listOf(
         TimestampedDisplayData(0, 0.0),
-        TimestampedDisplayData(0, 1.0),
-        TimestampedDisplayData(0, 2.0),
-        TimestampedDisplayData(0, 3.0),
-        TimestampedDisplayData(0, 4.0),
-        TimestampedDisplayData(0, 3.0),
-        TimestampedDisplayData(0, 2.0),
-        TimestampedDisplayData(0, 1.0),
+        TimestampedDisplayData(0, 0.0),
+        TimestampedDisplayData(0, 0.0),
+        TimestampedDisplayData(0, 0.0),
         TimestampedDisplayData(0, 0.0),
     )
 
@@ -38,7 +30,7 @@ fun main() {
 
     val path: OptimizedPath
     val t = measureNanoTime {
-        path = optimize(ptol, stol, positions, display)
+        path = optimize(ptol, stol, 2.0, positions, display, emptyList())
     }
 
     println("positions: ${path.positions}")
@@ -46,3 +38,9 @@ fun main() {
 
     println("took: ${t.toDuration(DurationUnit.NANOSECONDS)}")
 }
+
+/*
+positions: [0, 7, 14, 21, 31, 41, 51]
+display: [0, 6, 12, 17, 21, 22, 27, 32, 37, 41, 45, 51]
+text: [0, 6, 12, 17, 22, 27, 32, 37, 41, 45, 51]
+ */

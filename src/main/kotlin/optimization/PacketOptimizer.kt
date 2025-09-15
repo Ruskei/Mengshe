@@ -30,6 +30,12 @@ metadata_regions.total_updates * UPDATE_COST +
 loc_regions.total_tps * TP_COST +
 loc_regions.bounds * (UPDATE_COST + TD_UPDATE_COST)
 
+the text itself can also be changed in 2 ways for particle purposes...
+    color: can be optimized
+    content: cannot be optimized
+
+for content updates, just detect when it changes and insert that as a mandatory display data update point
+
 output:
     metadata region bounds
     loc region bounds
@@ -41,8 +47,10 @@ output:
 fun optimize(
     ptol: Double,
     stol: Double,
+    ctol: Double,
     posData: List<TimestampedPos>,
     displayData: List<TimestampedDisplayData>,
+    textData: List<TimestampedTextData>,
 ): OptimizedPath {
     val minPosCosts = DoubleArray(posData.size) {
         if (it == 0) 0.0
@@ -68,14 +76,29 @@ fun optimize(
         i++
     }
 
-    val posIndices = mutableListOf<Int>()
-    posIndices += posPath.size - 1
+    val posRegionIndices = mutableListOf<Int>()
+    posRegionIndices += posPath.size - 1
 
     var k = posPath[posPath.size - 1]
     do {
-        posIndices.addFirst(k)
+        posRegionIndices.addFirst(k)
         k = posPath[k]
     } while (k != -1)
+
+    println("posRegionIndices: $posRegionIndices")
+    
+    val actualizedPositions = posRegionIndices.actualizePositions(ptol, posData)
+    
+    val updateAreas = constructPosTPUpdateAreas(
+        regions = posRegionIndices,
+        actual = actualizedPositions,
+    )
+
+    val optimizedTextData = textData.deltas(ctol)
+
+    val anchors = optimizedTextData
+
+    println("anchors: $anchors")
 
     val minDisplayCosts = DoubleArray(displayData.size) {
         if (it == 0) 0.0
@@ -88,7 +111,7 @@ fun optimize(
     while (l < displayData.size) {
         var m = 0
         while (m < l) {
-            val currentCost = minDisplayCosts[m] + displayData.regionCost(stol, posIndices, m, l)
+            val currentCost = minDisplayCosts[m] + displayData.regionCost(stol, anchors, updateAreas, m, l)
 
             if (currentCost < minDisplayCosts[l]) {
                 minDisplayCosts[l] = currentCost
@@ -112,10 +135,37 @@ fun optimize(
         } while (n != -1)
     }
 
+    println("displayIndices: $displayIndices")
+
     return OptimizedPath(
-        posIndices.actualizePositions(ptol, posData),
-        displayIndices.actualizeDisplayData(stol, displayData)
+        actualizedPositions,
+        displayIndices.actualizeDisplayData(stol, displayData, anchors, updateAreas),
+        optimizedTextData,
     )
+}
+
+fun List<TimestampedTextData>.deltas(ctol: Double): List<Int> {
+    if (this.isEmpty()) return emptyList()
+    if (this.size == 1) return listOf(0)
+
+    val out = mutableListOf(0)
+
+    var currContent = first().content
+    var currColor = first().color
+    var i = 1
+    while (i < size) {
+        if (this[i].content != currContent || currColor.distance(this[i].color) > ctol) {
+            out += i
+            currContent = this[i].content
+            currColor = this[i].color
+        }
+
+        i++
+    }
+
+    out.add(size - 1)
+
+    return out
 }
 
 fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedPos>): List<Int> {
@@ -194,7 +244,12 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
     return out
 }
 
-fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<TimestampedDisplayData>): List<Int> {
+fun List<Int>.actualizeDisplayData(
+    tolerance: Double,
+    displayData: List<TimestampedDisplayData>,
+    anchors: List<Int>,
+    tpUpdateAreas: List<Pair<Int, Int>>,
+): List<Int> {
     if (isEmpty()) return emptyList()
 
     val out = mutableListOf<Int>()
@@ -202,6 +257,14 @@ fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<Timestam
     while (i < size - 1) {
         val start = this[i]
         val end = this[i + 1]
+
+        val relevant = anchors.filter { it in start..<end }
+        val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
+        for (updateArea in tpUpdateAreas) {
+            if (updateArea.first < end && updateArea.second > start) {
+                relevantUpdateAreas += updateArea
+            }
+        }
 
         val duration = end - start
         var t = duration
@@ -211,6 +274,17 @@ fun List<Int>.actualizeDisplayData(tolerance: Double, displayData: List<Timestam
 
         while (t > 1) {
             if (duration % t != 0) {
+                t--
+                continue
+            }
+
+            // must also make sure that all anchors that are within this range are covered by this period
+            if (relevant.any { (it - start) % t != 0 }) {
+                t--
+                continue
+            }
+
+            if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (t - (it.first - start) % t) < it.second }) {
                 t--
                 continue
             }
@@ -337,16 +411,70 @@ fun List<TimestampedPos>.regionCost(
     return minCost + TD_UPDATE_COST
 }
 
+/**
+ * Constructs the areas where teleportation duration can be updated
+ */
+fun constructPosTPUpdateAreas(
+    regions: List<Int>,
+    actual: List<Int>,
+): List<Pair<Int, Int>> {
+    val out = mutableListOf<Pair<Int, Int>>() 
+    var i = 1
+    var j = -1
+    while (i < regions.size - 1) { // don't create an update region for the last one
+        val r = regions[i]
+        while (j + 1 < actual.size && actual[j + 1] < r) {
+            j++
+        }
+
+        if (j != -1) {
+            // for first region we need to give extra 1 tick buffer
+            check(actual[j] < r)
+            if (i == 1) {
+                if (actual[j] + 1 >= r) {
+                    println("| FAILURE! ${actual[j] + 1} -> r")
+                } else {
+                    println("|0 updateArea: ${actual[j] + 1} -> $r")
+                    out += (actual[j] + 1) to r
+                }
+            } else {
+                println("| updateArea: ${actual[j]} -> $r")
+                out += actual[j] to r
+            }
+        }
+
+        i++
+    }
+
+    return out
+}
+
 fun List<TimestampedDisplayData>.regionCost(
     tolerance: Double,
-    posIndices: List<Int>,
+    anchors: List<Int>,
+    tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
 ): Double {
     require(end > start)
     require(start >= 0)
     require(end <= size)
 
-    val relevant = posIndices.filter { it in start..<end }
+    /*
+    we must ensure that we send an update somewhere between the the last tp before a region update (inclusive) and the region update (exclusive)
+    so we have a list of ranges which we need to fill
+        min list
+        max list
+    a region will never try to cover an entry in its list which goes outside of its max bounds (avoid duplicates)
+     */
+
+    val relevantAnchors = anchors.filter { it in start..<end }
+
+    val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
+    for (updateArea in tpUpdateAreas) {
+        if (updateArea.first < end && updateArea.second > start) {
+            relevantUpdateAreas += updateArea
+        }
+    }
 
     val duration = end - start
     var t = duration
@@ -359,8 +487,13 @@ fun List<TimestampedDisplayData>.regionCost(
             continue
         }
 
-        // must also make sure that all pos data that are within this range are covered by this period
-        if (relevant.any { (it - start) % t != 0 }) {
+        // must also make sure that all anchors that are within this range are covered by this period
+        if (relevantAnchors.any { (it - start) % t != 0 }) {
+            t--
+            continue
+        }
+
+        if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (it.first - start) % t - t < it.second }) {
             t--
             continue
         }
