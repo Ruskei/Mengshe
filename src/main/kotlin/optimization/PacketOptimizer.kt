@@ -1,5 +1,6 @@
 package com.ixume.optimization
 
+import com.ixume.optimization.math.Quaternion
 import kotlin.math.min
 
 /*
@@ -45,9 +46,10 @@ output:
  * @param posData Timestamped but still must not have any holes
  */
 fun optimize(
-    ptol: Double,
-    stol: Double,
-    ctol: Double,
+    positionTolerance: Double,
+    scaleTolerance: Double,
+    rotTolerance: Double,
+    colorTolerance: Double,
     posData: List<TimestampedPos>,
     displayData: List<TimestampedDisplayData>,
     textData: List<TimestampedTextData>,
@@ -63,7 +65,7 @@ fun optimize(
     while (i < posData.size) {
         var j = 0
         while (j < i) {
-            val currentCost = minPosCosts[j] + posData.regionCost(ptol, j, i)
+            val currentCost = minPosCosts[j] + posData.regionCost(positionTolerance, j, i)
 
             if (currentCost < minPosCosts[i]) {
                 minPosCosts[i] = currentCost
@@ -87,14 +89,14 @@ fun optimize(
 
     println("posRegionIndices: $posRegionIndices")
     
-    val actualizedPositions = posRegionIndices.actualizePositions(ptol, posData)
+    val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData)
     
     val updateAreas = constructPosTPUpdateAreas(
         regions = posRegionIndices,
         actual = actualizedPositions,
     )
 
-    val optimizedTextData = textData.deltas(ctol)
+    val optimizedTextData = textData.deltas(colorTolerance)
 
     val anchors = optimizedTextData
 
@@ -111,7 +113,7 @@ fun optimize(
     while (l < displayData.size) {
         var m = 0
         while (m < l) {
-            val currentCost = minDisplayCosts[m] + displayData.regionCost(stol, anchors, updateAreas, m, l)
+            val currentCost = minDisplayCosts[m] + displayData.regionCost(scaleTolerance, rotTolerance, anchors, updateAreas, m, l)
 
             if (currentCost < minDisplayCosts[l]) {
                 minDisplayCosts[l] = currentCost
@@ -139,7 +141,7 @@ fun optimize(
 
     return OptimizedPath(
         actualizedPositions,
-        displayIndices.actualizeDisplayData(stol, displayData, anchors, updateAreas),
+        displayIndices.actualizeDisplayData(scaleTolerance, rotTolerance, displayData, anchors, updateAreas),
         optimizedTextData,
     )
 }
@@ -154,7 +156,7 @@ fun List<TimestampedTextData>.deltas(ctol: Double): List<Int> {
     var currColor = first().color
     var i = 1
     while (i < size) {
-        if (this[i].content != currContent || currColor.distance(this[i].color) > ctol) {
+        if (this[i].content != currContent || currColor.scaleDistance(this[i].color) > ctol) {
             out += i
             currContent = this[i].content
             currColor = this[i].color
@@ -245,7 +247,8 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
 }
 
 fun List<Int>.actualizeDisplayData(
-    tolerance: Double,
+    scaleTolerance: Double,
+    rotTolerance: Double,
     displayData: List<TimestampedDisplayData>,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
@@ -257,79 +260,15 @@ fun List<Int>.actualizeDisplayData(
     while (i < size - 1) {
         val start = this[i]
         val end = this[i + 1]
-
-        val relevant = anchors.filter { it in start..<end }
-        val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
-        for (updateArea in tpUpdateAreas) {
-            if (updateArea.first < end && updateArea.second > start) {
-                relevantUpdateAreas += updateArea
-            }
-        }
-
-        val duration = end - start
-        var t = duration
-
-        var minCost = duration * UPDATE_COST
-        var bestPeriod = 1
-
-        while (t > 1) {
-            if (duration % t != 0) {
-                t--
-                continue
-            }
-
-            // must also make sure that all anchors that are within this range are covered by this period
-            if (relevant.any { (it - start) % t != 0 }) {
-                t--
-                continue
-            }
-
-            if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (t - (it.first - start) % t) < it.second }) {
-                t--
-                continue
-            }
-
-            var valid = true
-            // test if this period fits the data within tolerance
-            run check@{
-                var j = start
-                while (j < end) {
-                    // test all points (j + 1)..<(j + t)
-                    val s = displayData[j]
-                    val e = displayData[j + t]
-
-                    var k = j + 1
-                    while (k < j + t) {
-                        val f = (k - j) / t.toDouble()
-                        val p = displayData[k]
-                        val d = p.distance(
-                            (e.scaleX - s.scaleX) * f + s.scaleX,
-                            (e.scaleY - s.scaleY) * f + s.scaleY,
-                            (e.scaleZ - s.scaleZ) * f + s.scaleZ,
-                        )
-
-                        if (d > tolerance) {
-                            valid = false
-                            return@check
-                        }
-
-                        k++
-                    }
-
-                    j += t
-                }
-            }
-
-            if (valid) {
-                val c = duration / t * TP_COST
-                if (c < minCost) {
-                    minCost = c
-                    bestPeriod = t
-                }
-            }
-
-            t--
-        }
+        
+        val bestPeriod = bestPeriod(
+            displayData = displayData,
+            scaleTolerance = scaleTolerance,
+            rotTolerance = rotTolerance,
+            anchors = anchors,
+            tpUpdateAreas = tpUpdateAreas,
+            start = start, end = end,
+        )
 
         var q = start
         while (q < end) {
@@ -450,7 +389,8 @@ fun constructPosTPUpdateAreas(
 }
 
 fun List<TimestampedDisplayData>.regionCost(
-    tolerance: Double,
+    scaleTolerance: Double,
+    rotTolerance: Double,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
@@ -467,8 +407,30 @@ fun List<TimestampedDisplayData>.regionCost(
     a region will never try to cover an entry in its list which goes outside of its max bounds (avoid duplicates)
      */
 
-    val relevantAnchors = anchors.filter { it in start..<end }
+    val duration = end - start
+    
+    val bestPeriod = bestPeriod(
+        displayData = this,
+        scaleTolerance = scaleTolerance,
+        rotTolerance = rotTolerance,
+        anchors = anchors,
+        tpUpdateAreas = tpUpdateAreas,
+        start = start, end = end,
+    )
+    
+    val cost = duration / bestPeriod * UPDATE_COST
 
+    return cost
+}
+
+fun bestPeriod(
+    displayData: List<TimestampedDisplayData>,
+    scaleTolerance: Double, rotTolerance: Double,
+    anchors: List<Int>,
+    tpUpdateAreas: List<Pair<Int, Int>>,
+    start: Int, end: Int,
+): Int {
+    val relevant = anchors.filter { it in start..<end }
     val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
     for (updateArea in tpUpdateAreas) {
         if (updateArea.first < end && updateArea.second > start) {
@@ -480,6 +442,7 @@ fun List<TimestampedDisplayData>.regionCost(
     var t = duration
 
     var minCost = duration * UPDATE_COST
+    var bestPeriod = 1
 
     while (t > 1) {
         if (duration % t != 0) {
@@ -488,12 +451,12 @@ fun List<TimestampedDisplayData>.regionCost(
         }
 
         // must also make sure that all anchors that are within this range are covered by this period
-        if (relevantAnchors.any { (it - start) % t != 0 }) {
+        if (relevant.any { (it - start) % t != 0 }) {
             t--
             continue
         }
 
-        if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (it.first - start) % t - t < it.second }) {
+        if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (t - (it.first - start) % t) < it.second }) {
             t--
             continue
         }
@@ -504,20 +467,28 @@ fun List<TimestampedDisplayData>.regionCost(
             var j = start
             while (j < end) {
                 // test all points (j + 1)..<(j + t)
-                val s = this[j]
-                val e = this[j + t]
+                val s = displayData[j]
+                val e = displayData[j + t]
 
                 var k = j + 1
                 while (k < j + t) {
                     val f = (k - j) / t.toDouble()
-                    val p = this[k]
-                    val d = p.distance(
+                    val p = displayData[k]
+                    val d = p.scaleDistance(
                         (e.scaleX - s.scaleX) * f + s.scaleX,
                         (e.scaleY - s.scaleY) * f + s.scaleY,
                         (e.scaleZ - s.scaleZ) * f + s.scaleZ,
                     )
 
-                    if (d > tolerance) {
+                    if (d > scaleTolerance) {
+                        valid = false
+                        return@check
+                    }
+                    
+                    val q = Quaternion(s.rot.x, s.rot.y, s.rot.z, s.rot.w).nlerp(e.rot, f)
+                    val rd = p.rotDistance(q)
+                    
+                    if (rd > rotTolerance) {
                         valid = false
                         return@check
                     }
@@ -530,16 +501,18 @@ fun List<TimestampedDisplayData>.regionCost(
         }
 
         if (valid) {
-            val c = duration / t * UPDATE_COST
-            minCost = min(minCost, c)
+            val c = duration / t * TP_COST
+            if (c < minCost) {
+                minCost = c
+                bestPeriod = t
+            }
         }
 
         t--
     }
-
-    return minCost
+    
+    return bestPeriod
 }
-
 
 private const val TP_COST = 1.0
 private const val UPDATE_COST = 2.0

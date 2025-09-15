@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.ixume"
-version = "0.0.2.16"
+version = "0.0.2.18"
 
 repositories {
     mavenCentral()

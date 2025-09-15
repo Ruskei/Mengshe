@@ -52,7 +52,7 @@ fun Color.toCIELab(): CIELab {
     return CIELab(L_, a_, b_)
 }
 
-fun Color.distance(other: Color): Double {
+fun Color.scaleDistance(other: Color): Double {
     val lab1 = this.toCIELab()
     val lab2 = other.toCIELab()
 
