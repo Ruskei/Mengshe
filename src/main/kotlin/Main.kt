@@ -31,7 +31,7 @@ fun main() {
 
     val path: OptimizedPath
     val t = measureNanoTime {
-        path = optimize(ptol, stol, 2.0, 1.0, positions, display, emptyList(), Costs.DEFAULT)
+        path = optimize(ptol, stol, 2.0, 1.0, positions, display, emptyList(), Costs.DEFAULT, true)
     }
 
     println("positions: ${path.positions}")

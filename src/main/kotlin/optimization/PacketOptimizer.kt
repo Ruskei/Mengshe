@@ -54,6 +54,7 @@ fun optimize(
     displayData: List<TimestampedDisplayData>,
     textData: List<TimestampedTextData>,
     costs: Costs,
+    debugInfo: Boolean,
 ): OptimizedPath {
     val minPosCosts = DoubleArray(posData.size) {
         if (it == 0) 0.0
@@ -88,7 +89,9 @@ fun optimize(
         k = posPath[k]
     } while (k != -1)
 
-    println("posRegionIndices: $posRegionIndices")
+    if (debugInfo) {
+        println("posRegionIndices: $posRegionIndices")
+    }
     
     val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData, costs)
     
@@ -101,7 +104,9 @@ fun optimize(
 
     val anchors = optimizedTextData
 
-    println("anchors: $anchors")
+    if (debugInfo) {
+        println("anchors: $anchors")
+    }
 
     val minDisplayCosts = DoubleArray(displayData.size) {
         if (it == 0) 0.0
@@ -138,7 +143,9 @@ fun optimize(
         } while (n != -1)
     }
 
-    println("displayIndices: $displayIndices")
+    if (debugInfo) {
+        println("displayIndices: $displayIndices")
+    }
 
     return OptimizedPath(
         actualizedPositions,
@@ -379,13 +386,13 @@ fun constructPosTPUpdateAreas(
             check(actual[j] < r)
             if (i == 1) {
                 if (actual[j] + 1 >= r) {
-                    println("| FAILURE! ${actual[j] + 1} -> r")
+//                    println("| FAILURE! ${actual[j] + 1} -> r")
                 } else {
-                    println("|0 updateArea: ${actual[j] + 1} -> $r")
+//                    println("|0 updateArea: ${actual[j] + 1} -> $r")
                     out += (actual[j] + 1) to r
                 }
             } else {
-                println("| updateArea: ${actual[j]} -> $r")
+//                println("| updateArea: ${actual[j]} -> $r")
                 out += actual[j] to r
             }
         }
