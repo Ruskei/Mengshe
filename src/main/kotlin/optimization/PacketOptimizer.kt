@@ -53,6 +53,7 @@ fun optimize(
     posData: List<TimestampedPos>,
     displayData: List<TimestampedDisplayData>,
     textData: List<TimestampedTextData>,
+    costs: Costs,
 ): OptimizedPath {
     val minPosCosts = DoubleArray(posData.size) {
         if (it == 0) 0.0
@@ -65,7 +66,7 @@ fun optimize(
     while (i < posData.size) {
         var j = 0
         while (j < i) {
-            val currentCost = minPosCosts[j] + posData.regionCost(positionTolerance, j, i)
+            val currentCost = minPosCosts[j] + posData.regionCost(positionTolerance, j, i, costs)
 
             if (currentCost < minPosCosts[i]) {
                 minPosCosts[i] = currentCost
@@ -89,7 +90,7 @@ fun optimize(
 
     println("posRegionIndices: $posRegionIndices")
     
-    val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData)
+    val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData, costs)
     
     val updateAreas = constructPosTPUpdateAreas(
         regions = posRegionIndices,
@@ -113,7 +114,7 @@ fun optimize(
     while (l < displayData.size) {
         var m = 0
         while (m < l) {
-            val currentCost = minDisplayCosts[m] + displayData.regionCost(scaleTolerance, rotTolerance, anchors, updateAreas, m, l)
+            val currentCost = minDisplayCosts[m] + displayData.regionCost(scaleTolerance, rotTolerance, anchors, updateAreas, m, l, costs)
 
             if (currentCost < minDisplayCosts[l]) {
                 minDisplayCosts[l] = currentCost
@@ -141,7 +142,7 @@ fun optimize(
 
     return OptimizedPath(
         actualizedPositions,
-        displayIndices.actualizeDisplayData(scaleTolerance, rotTolerance, displayData, anchors, updateAreas),
+        displayIndices.actualizeDisplayData(scaleTolerance, rotTolerance, displayData, anchors, updateAreas, costs),
         optimizedTextData,
     )
 }
@@ -170,7 +171,11 @@ fun List<TimestampedTextData>.deltas(ctol: Double): List<Int> {
     return out
 }
 
-fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedPos>): List<Int> {
+fun List<Int>.actualizePositions(
+    tolerance: Double, 
+    positions: List<TimestampedPos>,
+    costs: Costs,
+): List<Int> {
     val out = mutableListOf<Int>()
     var i = 0
     while (i < size - 1) {
@@ -180,7 +185,7 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
         val duration = end - start
         var t = duration
 
-        var minCost = duration * TP_COST
+        var minCost = duration * costs.tpCost
         var bestPeriod = 1
 
         while (t > 1) {
@@ -221,7 +226,7 @@ fun List<Int>.actualizePositions(tolerance: Double, positions: List<TimestampedP
             }
 
             if (valid) {
-                val c = duration / t * TP_COST
+                val c = duration / t * costs.tpCost
                 if (c < minCost) {
                     minCost = c
                     bestPeriod = t
@@ -252,6 +257,7 @@ fun List<Int>.actualizeDisplayData(
     displayData: List<TimestampedDisplayData>,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
+    costs: Costs,
 ): List<Int> {
     if (isEmpty()) return emptyList()
 
@@ -268,6 +274,7 @@ fun List<Int>.actualizeDisplayData(
             anchors = anchors,
             tpUpdateAreas = tpUpdateAreas,
             start = start, end = end,
+            costs = costs,
         )
 
         var q = start
@@ -292,6 +299,7 @@ fun List<Int>.actualizeDisplayData(
 fun List<TimestampedPos>.regionCost(
     tolerance: Double,
     start: Int, end: Int,
+    costs: Costs,
 ): Double {
     require(end > start)
     require(start >= 0)
@@ -300,7 +308,7 @@ fun List<TimestampedPos>.regionCost(
     val duration = end - start
     var t = duration
 
-    var minCost = duration * TP_COST
+    var minCost = duration * costs.tpCost
 
     while (t > 1) {
         if (duration % t != 0) {
@@ -340,14 +348,14 @@ fun List<TimestampedPos>.regionCost(
         }
 
         if (valid) {
-            val c = duration / t * TP_COST
+            val c = duration / t * costs.tpCost
             minCost = min(minCost, c)
         }
 
         t--
     }
 
-    return minCost + TD_UPDATE_COST
+    return minCost + costs.updateCost.toDouble()
 }
 
 /**
@@ -394,6 +402,7 @@ fun List<TimestampedDisplayData>.regionCost(
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
+    costs: Costs,
 ): Double {
     require(end > start)
     require(start >= 0)
@@ -416,11 +425,12 @@ fun List<TimestampedDisplayData>.regionCost(
         anchors = anchors,
         tpUpdateAreas = tpUpdateAreas,
         start = start, end = end,
+        costs = costs,
     )
     
-    val cost = duration / bestPeriod * UPDATE_COST
+    val cost = duration / bestPeriod * costs.updateCost
 
-    return cost
+    return cost.toDouble()
 }
 
 fun bestPeriod(
@@ -429,6 +439,7 @@ fun bestPeriod(
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
+    costs: Costs,
 ): Int {
     val relevant = anchors.filter { it in start..<end }
     val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
@@ -441,7 +452,7 @@ fun bestPeriod(
     val duration = end - start
     var t = duration
 
-    var minCost = duration * UPDATE_COST
+    var minCost = duration * costs.updateCost
     var bestPeriod = 1
 
     while (t > 1) {
@@ -501,7 +512,7 @@ fun bestPeriod(
         }
 
         if (valid) {
-            val c = duration / t * TP_COST
+            val c = duration / t * costs.tpCost
             if (c < minCost) {
                 minCost = c
                 bestPeriod = t
@@ -513,7 +524,3 @@ fun bestPeriod(
     
     return bestPeriod
 }
-
-private const val TP_COST = 1.0
-private const val UPDATE_COST = 2.0
-private const val TD_UPDATE_COST = 3.0

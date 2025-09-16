@@ -1,5 +1,6 @@
 package com.ixume
 
+import com.ixume.optimization.Costs
 import com.ixume.optimization.OptimizedPath
 import com.ixume.optimization.TimestampedDisplayData
 import com.ixume.optimization.TimestampedPos
@@ -30,7 +31,7 @@ fun main() {
 
     val path: OptimizedPath
     val t = measureNanoTime {
-        path = optimize(ptol, stol, 2.0, 1.0, positions, display, emptyList())
+        path = optimize(ptol, stol, 2.0, 1.0, positions, display, emptyList(), Costs.DEFAULT)
     }
 
     println("positions: ${path.positions}")
