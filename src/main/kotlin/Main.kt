@@ -1,15 +1,17 @@
 package com.ixume
 
 import com.ixume.optimization.Costs
+import com.ixume.optimization.LocalPacketOptimizer
 import com.ixume.optimization.OptimizedPath
 import com.ixume.optimization.TimestampedDisplayData
 import com.ixume.optimization.TimestampedPos
-import com.ixume.optimization.optimize
 import kotlin.system.measureNanoTime
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
 fun main() {
+    val optimizer = LocalPacketOptimizer()
+    
     val positions = listOf(
         TimestampedPos(0, 0.0, 0.0, 0.0),
         TimestampedPos(0, 0.0, 1.0, 0.0),
@@ -31,7 +33,7 @@ fun main() {
 
     val path: OptimizedPath
     val t = measureNanoTime {
-        path = optimize(ptol, stol, 2.0, 1.0, 30.0, positions, display, emptyList(), Costs.DEFAULT, true)
+        path = optimizer.optimize(ptol, stol, 2.0, 1.0, 30.0, positions, display, emptyList(), Costs.DEFAULT, true)
     }
 
     println("positions: ${path.positions}")
