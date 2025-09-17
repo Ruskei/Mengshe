@@ -50,6 +50,7 @@ fun optimize(
     scaleTolerance: Double,
     rotTolerance: Double,
     colorTolerance: Double,
+    opacityTolerance: Double,
     posData: List<TimestampedPos>,
     displayData: List<TimestampedDisplayData>,
     textData: List<TimestampedTextData>,
@@ -92,9 +93,9 @@ fun optimize(
     if (debugInfo) {
         println("posRegionIndices: $posRegionIndices")
     }
-    
+
     val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData, costs)
-    
+
     val updateAreas = constructPosTPUpdateAreas(
         regions = posRegionIndices,
         actual = actualizedPositions,
@@ -119,7 +120,14 @@ fun optimize(
     while (l < displayData.size) {
         var m = 0
         while (m < l) {
-            val currentCost = minDisplayCosts[m] + displayData.regionCost(scaleTolerance, rotTolerance, anchors, updateAreas, m, l, costs)
+            val currentCost = minDisplayCosts[m] + displayData.regionCost(
+                scaleTolerance, rotTolerance, opacityTolerance,
+                anchors,
+                updateAreas,
+                m,
+                l,
+                costs
+            )
 
             if (currentCost < minDisplayCosts[l]) {
                 minDisplayCosts[l] = currentCost
@@ -149,7 +157,7 @@ fun optimize(
 
     return OptimizedPath(
         actualizedPositions,
-        displayIndices.actualizeDisplayData(scaleTolerance, rotTolerance, displayData, anchors, updateAreas, costs),
+        displayIndices.actualizeDisplayData(scaleTolerance, rotTolerance, opacityTolerance, displayData, anchors, updateAreas, costs),
         optimizedTextData,
     )
 }
@@ -179,7 +187,7 @@ fun List<TimestampedTextData>.deltas(ctol: Double): List<Int> {
 }
 
 fun List<Int>.actualizePositions(
-    tolerance: Double, 
+    tolerance: Double,
     positions: List<TimestampedPos>,
     costs: Costs,
 ): List<Int> {
@@ -259,8 +267,7 @@ fun List<Int>.actualizePositions(
 }
 
 fun List<Int>.actualizeDisplayData(
-    scaleTolerance: Double,
-    rotTolerance: Double,
+    scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
     displayData: List<TimestampedDisplayData>,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
@@ -273,11 +280,12 @@ fun List<Int>.actualizeDisplayData(
     while (i < size - 1) {
         val start = this[i]
         val end = this[i + 1]
-        
-        val bestPeriod = bestPeriod(
+
+        val bestPeriod = bestDisplayPeriod(
             displayData = displayData,
             scaleTolerance = scaleTolerance,
             rotTolerance = rotTolerance,
+            opacityTolerance = opacityTolerance,
             anchors = anchors,
             tpUpdateAreas = tpUpdateAreas,
             start = start, end = end,
@@ -372,7 +380,7 @@ fun constructPosTPUpdateAreas(
     regions: List<Int>,
     actual: List<Int>,
 ): List<Pair<Int, Int>> {
-    val out = mutableListOf<Pair<Int, Int>>() 
+    val out = mutableListOf<Pair<Int, Int>>()
     var i = 1
     var j = -1
     while (i < regions.size - 1) { // don't create an update region for the last one
@@ -404,8 +412,7 @@ fun constructPosTPUpdateAreas(
 }
 
 fun List<TimestampedDisplayData>.regionCost(
-    scaleTolerance: Double,
-    rotTolerance: Double,
+    scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
@@ -424,25 +431,26 @@ fun List<TimestampedDisplayData>.regionCost(
      */
 
     val duration = end - start
-    
-    val bestPeriod = bestPeriod(
+
+    val bestPeriod = bestDisplayPeriod(
         displayData = this,
         scaleTolerance = scaleTolerance,
         rotTolerance = rotTolerance,
+        opacityTolerance = opacityTolerance,
         anchors = anchors,
         tpUpdateAreas = tpUpdateAreas,
         start = start, end = end,
         costs = costs,
     )
-    
+
     val cost = duration / bestPeriod * costs.updateCost
 
     return cost.toDouble()
 }
 
-fun bestPeriod(
+fun bestDisplayPeriod(
     displayData: List<TimestampedDisplayData>,
-    scaleTolerance: Double, rotTolerance: Double,
+    scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
     anchors: List<Int>,
     tpUpdateAreas: List<Pair<Int, Int>>,
     start: Int, end: Int,
@@ -492,6 +500,13 @@ fun bestPeriod(
                 while (k < j + t) {
                     val f = (k - j) / t.toDouble()
                     val p = displayData[k]
+
+                    val opacityDist = p.opacityDistance(interpolateOpacity(s.opacity, e.opacity, f))
+                    if (opacityDist > opacityTolerance) {
+                        valid = false
+                        return@check
+                    }
+
                     val d = p.scaleDistance(
                         (e.scaleX - s.scaleX) * f + s.scaleX,
                         (e.scaleY - s.scaleY) * f + s.scaleY,
@@ -502,10 +517,10 @@ fun bestPeriod(
                         valid = false
                         return@check
                     }
-                    
+
                     val q = Quaternion(s.rot.x, s.rot.y, s.rot.z, s.rot.w).nlerp(e.rot, f)
                     val rd = p.rotDistance(q)
-                    
+
                     if (rd > rotTolerance) {
                         valid = false
                         return@check
@@ -528,6 +543,6 @@ fun bestPeriod(
 
         t--
     }
-    
+
     return bestPeriod
 }

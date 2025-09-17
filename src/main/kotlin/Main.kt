@@ -19,11 +19,11 @@ fun main() {
     )
 
     val display = listOf(
-        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0),
-        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0),
-        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0),
-        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0),
-        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0),
+        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0, 255),
+        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0, 255),
+        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0, 255),
+        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0, 255),
+        TimestampedDisplayData(0, 0.0, 1.0, 0.0, 0.0, 0.0, 255),
     )
 
     val ptol = 0.1
@@ -31,7 +31,7 @@ fun main() {
 
     val path: OptimizedPath
     val t = measureNanoTime {
-        path = optimize(ptol, stol, 2.0, 1.0, positions, display, emptyList(), Costs.DEFAULT, true)
+        path = optimize(ptol, stol, 2.0, 1.0, 30.0, positions, display, emptyList(), Costs.DEFAULT, true)
     }
 
     println("positions: ${path.positions}")
