@@ -53,7 +53,7 @@ fun optimize(
     opacityTolerance: Double,
     posData: List<TimestampedPos>,
     displayData: List<TimestampedDisplayData>,
-    textData: List<TimestampedTextData>,
+    textData: List<TimestampedContentData>,
     costs: Costs,
     debugInfo: Boolean,
 ): OptimizedPath {
@@ -162,7 +162,7 @@ fun optimize(
     )
 }
 
-fun List<TimestampedTextData>.deltas(ctol: Double): List<Int> {
+fun List<TimestampedContentData>.deltas(ctol: Double): List<Int> {
     if (this.isEmpty()) return emptyList()
     if (this.size == 1) return listOf(0)
 

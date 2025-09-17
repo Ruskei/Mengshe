@@ -4,9 +4,9 @@ import java.awt.Color
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-data class TimestampedTextData(
+data class TimestampedContentData(
     val t: Int,
-    val content: String,
+    val content: Any,
     val color: Color,
 )
 
