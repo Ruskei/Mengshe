@@ -56,6 +56,19 @@ class Quaternion(var x: Double, var y: Double, var z: Double, var w: Double) {
         return this
     }
     
+    fun set(x: Double, y: Double, z: Double, w: Double): Quaternion {
+        this.x = x
+        this.y = y
+        this.z = z
+        this.w = w
+        
+        return this
+    }
+    
+    fun set(other: Quaternion): Quaternion {
+        return set(other.x, other.y, other.z, other.w)
+    }
+    
     operator fun times(other: Quaternion): Quaternion {
         return Quaternion(x, y, z, w).mul(other)
     }

@@ -1,6 +1,11 @@
 package com.ixume.optimization
 
 import com.ixume.optimization.math.Quaternion
+import it.unimi.dsi.fastutil.doubles.DoubleArrayList
+import it.unimi.dsi.fastutil.ints.IntArrayList
+import it.unimi.dsi.fastutil.longs.LongArrayList
+import java.util.*
+import kotlin.math.sqrt
 
 /*
 Context
@@ -133,6 +138,18 @@ class LocalPacketOptimizer() {
         return full
     }
 
+    private val _posData = PosArrayList()
+
+    private val _minPosCosts = DoubleArrayList()
+    private val _posPath = IntArrayList()
+
+    private val _posRegionIndices = IntArrayList()
+
+    private val _minDisplayCosts = DoubleArrayList()
+    private val _displayPath = IntArrayList()
+
+    private val _displayIndices = IntArrayList()
+
     fun optimize(
         positionTolerance: Double,
         scaleTolerance: Double,
@@ -148,20 +165,22 @@ class LocalPacketOptimizer() {
         totalPosCycles = 0
         skippedCycles = 0
 
-        val minPosCosts = DoubleArray(posData.size) {
-            if (it == 0) 0.0
-            else Double.MAX_VALUE
-        }
+        _posData.from(posData)
 
-        val posPath = IntArray(posData.size) { -1 }
+        _minPosCosts.size(posData.size)
+        Arrays.fill(_minPosCosts.elements(), Double.MAX_VALUE)
+        _minPosCosts.set(0, 0.0)
+
+        _posPath.size(posData.size)
+        Arrays.fill(_posPath.elements(), -1)
 
         var i = 0
-        while (i < posData.size) {
+        while (i < _posData.size) {
             var j = 0
             while (j < i) {
-                val divideBest = minPosCosts[j]
-                val currBest = minPosCosts[i]
-                val currentCost = divideBest + posData.regionCost(
+                val divideBest = _minPosCosts.getDouble(j)
+                val currBest = _minPosCosts.getDouble(i)
+                val currentCost = divideBest + _posData.posRegionCost(
                     positionTolerance,
                     j,
                     i,
@@ -171,8 +190,8 @@ class LocalPacketOptimizer() {
                 )
 
                 if (currentCost < currBest) {
-                    minPosCosts[i] = currentCost
-                    posPath[i] = j
+                    _minPosCosts.set(j, currentCost)
+                    _posPath.set(i, j)
                 }
 
                 j++
@@ -181,48 +200,48 @@ class LocalPacketOptimizer() {
             i++
         }
 
-        val posRegionIndices = mutableListOf<Int>()
-        posRegionIndices += posPath.size - 1
+        _posRegionIndices.clear()
+        _posRegionIndices.add(_posPath.size - 1)
 
-        var k = posPath[posPath.size - 1]
+        var k = _posPath.getInt(_posPath.size - 1)
         do {
-            posRegionIndices.addFirst(k)
-            k = posPath[k]
+            _posRegionIndices.add(0, k)
+            k = _posPath.getInt(k)
         } while (k != -1)
 
         if (debugInfo) {
-            println("posRegionIndices: $posRegionIndices")
+            println("posRegionIndices: $_posRegionIndices")
         }
 
-        val actualizedPositions = posRegionIndices.actualizePositions(positionTolerance, posData, costs)
+        val actualizedPositions = IntArrayList()
+        _posRegionIndices.actualizePositions(positionTolerance, _posData, costs, actualizedPositions)
 
         val updateAreas = constructPosTPUpdateAreas(
-            regions = posRegionIndices,
+            regions = _posRegionIndices,
             actual = actualizedPositions,
         )
 
         val optimizedTextData = textData.deltas(colorTolerance)
-
         val anchors = optimizedTextData
 
         if (debugInfo) {
             println("anchors: $anchors")
         }
 
-        val minDisplayCosts = DoubleArray(displayData.size) {
-            if (it == 0) 0.0
-            else Double.MAX_VALUE
-        }
+        _minDisplayCosts.size(displayData.size)
+        Arrays.fill(_minDisplayCosts.elements(), Double.MAX_VALUE)
+        _minDisplayCosts.set(0, 0.0)
 
-        val displayPath = IntArray(displayData.size) { -1 }
+        _displayPath.size(displayData.size)
+        Arrays.fill(_displayPath.elements(), -1)
 
         var l = 0
         while (l < displayData.size) {
             var m = 0
             while (m < l) {
-                val currBest = minDisplayCosts[l]
-                val divideBest = minDisplayCosts[m]
-                val currentCost = divideBest + displayData.regionCost(
+                val currBest = _minDisplayCosts.getDouble(l)
+                val divideBest = _minDisplayCosts.getDouble(m)
+                val currentCost = divideBest + displayData.displayRegionCost(
                     scaleTolerance, rotTolerance, opacityTolerance,
                     anchors,
                     updateAreas,
@@ -233,8 +252,8 @@ class LocalPacketOptimizer() {
                 )
 
                 if (currentCost < currBest) {
-                    minDisplayCosts[l] = currentCost
-                    displayPath[l] = m
+                    _minDisplayCosts.set(l, currentCost)
+                    _displayPath.set(l, m)
                 }
 
                 m++
@@ -243,24 +262,24 @@ class LocalPacketOptimizer() {
             l++
         }
 
-        val displayIndices = mutableListOf<Int>()
+        _displayIndices.clear()
         if (displayData.isNotEmpty()) {
-            displayIndices += displayPath.size - 1
+            _displayIndices += _displayPath.size - 1
 
-            var n = displayPath[displayPath.size - 1]
+            var n = _displayPath.getInt(_displayPath.size - 1)
             do {
-                displayIndices.addFirst(n)
-                n = displayPath[n]
+                _displayIndices.addFirst(n)
+                n = _displayPath.getInt(n)
             } while (n != -1)
         }
 
         if (debugInfo) {
-            println("displayIndices: $displayIndices")
+            println("displayIndices: $_displayIndices")
         }
 
         return OptimizedPath(
             actualizedPositions,
-            displayIndices.actualizeDisplayData(
+            _displayIndices.actualizeDisplayData(
                 scaleTolerance,
                 rotTolerance,
                 opacityTolerance,
@@ -273,11 +292,11 @@ class LocalPacketOptimizer() {
         )
     }
 
-    fun List<TimestampedContentData>.deltas(ctol: Double): MutableList<Int> {
-        if (this.isEmpty()) return mutableListOf()
-        if (this.size == 1) return mutableListOf(0)
+    fun List<TimestampedContentData>.deltas(ctol: Double): IntArrayList {
+        if (this.isEmpty()) return IntArrayList()
+        if (this.size == 1) return IntArrayList()
 
-        val out = mutableListOf(0)
+        val out = IntArrayList()
 
         var currContent = first().content
         var currColor = first().color
@@ -297,16 +316,16 @@ class LocalPacketOptimizer() {
         return out
     }
 
-    fun List<Int>.actualizePositions(
+    fun IntArrayList.actualizePositions(
         tolerance: Double,
-        positions: List<TimestampedPos>,
+        positions: PosArrayList,
         costs: Costs,
-    ): MutableList<Int> {
-        val out = mutableListOf<Int>()
+        out: IntArrayList,
+    ) {
         var i = 0
         while (i < size - 1) {
-            val start = this[i]
-            val end = this[i + 1]
+            val start = this.getInt(i)
+            val end = this.getInt(i + 1)
 
             val duration = end - start
             var t = duration
@@ -326,17 +345,26 @@ class LocalPacketOptimizer() {
                     var j = start
                     while (j < end) {
                         // test all points (j + 1)..<(j + t)
-                        val s = positions[j]
-                        val e = positions[j + t]
+                        val sx = positions.x(j)
+                        val sy = positions.y(j)
+                        val sz = positions.z(j)
+
+                        val ex = positions.x(j + t)
+                        val ey = positions.y(j + t)
+                        val ez = positions.z(j + t)
 
                         var k = j + 1
                         while (k < j + t) {
                             val f = (k - j) / t.toDouble()
-                            val p = positions[k]
-                            val d = p.distance(
-                                (e.x - s.x) * f + s.x,
-                                (e.y - s.y) * f + s.y,
-                                (e.z - s.z) * f + s.z,
+                            val px = positions.x(k)
+                            val py = positions.y(k)
+                            val pz = positions.z(k)
+
+                            val d = distance(
+                                px, py, pz,
+                                (ex - sx) * f + sx,
+                                (ey - sy) * f + sy,
+                                (ez - sz) * f + sz,
                             )
 
                             if (d > tolerance) {
@@ -373,24 +401,22 @@ class LocalPacketOptimizer() {
         }
 
         out += last()
-
-        return out
     }
 
-    fun List<Int>.actualizeDisplayData(
+    fun IntArrayList.actualizeDisplayData(
         scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
         displayData: List<TimestampedDisplayData>,
-        anchors: List<Int>,
+        anchors: IntArrayList,
         tpUpdateAreas: List<Pair<Int, Int>>,
         costs: Costs,
-    ): MutableList<Int> {
-        if (isEmpty()) return mutableListOf()
+    ): IntArrayList {
+        if (isEmpty()) return IntArrayList()
 
-        val out = mutableListOf<Int>()
+        val out = IntArrayList()
         var i = 0
         while (i < size - 1) {
-            val start = this[i]
-            val end = this[i + 1]
+            val start = this.getInt(i)
+            val end = this.getInt(i + 1)
 
             val bestPeriod = bestDisplayPeriod(
                 displayData = displayData,
@@ -424,7 +450,7 @@ class LocalPacketOptimizer() {
      * @param end exclusive, but must be in array
      * @return Double.MAX_VALUE if cost cannot be smaller than besTcost
      */
-    fun List<TimestampedPos>.regionCost(
+    fun PosArrayList.posRegionCost(
         tolerance: Double,
         start: Int, end: Int,
         costs: Costs,
@@ -451,17 +477,26 @@ class LocalPacketOptimizer() {
                 var j = start
                 while (j < end) {
                     // test all points (j + 1)..<(j + t)
-                    val s = this[j]
-                    val e = this[j + t]
+                    val sx = x(j)
+                    val sy = y(j)
+                    val sz = z(j)
+
+                    val ex = x(j + t)
+                    val ey = y(j + t)
+                    val ez = z(j + t)
 
                     var k = j + 1
                     while (k < j + t) {
                         val f = (k - j) / t.toDouble()
-                        val p = this[k]
-                        val d = p.distance(
-                            (e.x - s.x) * f + s.x,
-                            (e.y - s.y) * f + s.y,
-                            (e.z - s.z) * f + s.z,
+                        val px = x(k)
+                        val py = y(k)
+                        val pz = z(k)
+
+                        val d = distance(
+                            px, py, pz,
+                            (ex - sx) * f + sx,
+                            (ey - sy) * f + sy,
+                            (ez - sz) * f + sz,
                         )
 
                         if (d > tolerance) {
@@ -525,9 +560,9 @@ class LocalPacketOptimizer() {
         return out
     }
 
-    fun List<TimestampedDisplayData>.regionCost(
+    fun List<TimestampedDisplayData>.displayRegionCost(
         scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
-        anchors: List<Int>,
+        anchors: IntArrayList,
         tpUpdateAreas: List<Pair<Int, Int>>,
         start: Int, end: Int,
         costs: Costs,
@@ -568,21 +603,35 @@ class LocalPacketOptimizer() {
         return cost.toDouble()
     }
 
+    private val _relevantAnchors = IntArrayList()
+    private val _relevantUpdateAreas = LongArrayList()
+
+    private val _quat = Quaternion(0.0, 0.0, 0.0, 0.0)
+
     fun bestDisplayPeriod(
         displayData: List<TimestampedDisplayData>,
         scaleTolerance: Double, rotTolerance: Double, opacityTolerance: Double,
-        anchors: List<Int>,
+        anchors: IntArrayList,
         tpUpdateAreas: List<Pair<Int, Int>>,
         start: Int, end: Int,
         costs: Costs,
         quitEarly: Boolean,
         bestCost: Double, divideCost: Double,
     ): Int {
-        val relevant = anchors.filter { it in start..<end }
-        val relevantUpdateAreas = mutableListOf<Pair<Int, Int>>()
-        for (updateArea in tpUpdateAreas) {
-            if (updateArea.first < end && updateArea.second > start) {
-                relevantUpdateAreas += updateArea
+        _relevantAnchors.clear()
+        for (m in 0..<anchors.size) {
+            val a = anchors.getInt(m)
+            if (a in start..<end) {
+                _relevantAnchors.add(a)
+            }
+        }
+
+        _relevantUpdateAreas.clear()
+        for (m in 0..<tpUpdateAreas.size) {
+            val s = tpUpdateAreas[m].first
+            val e = tpUpdateAreas[m].second
+            if (s < end && e > start) {
+                _relevantUpdateAreas.add((s.toLong() shl 32) and e.toLong())
             }
         }
 
@@ -601,14 +650,21 @@ class LocalPacketOptimizer() {
             }
 
             // must also make sure that all anchors that are within this range are covered by this period
-            if (relevant.any { (it - start) % t != 0 }) {
-                t--
-                continue
+            for (m in 0..<_relevantAnchors.size) {
+                if ((_relevantAnchors.getInt(m) - start) % t != 0) {
+                    t--
+                    continue
+                }
             }
 
-            if (!relevantUpdateAreas.all { (it.first - start) % t == 0 || it.first + (t - (it.first - start) % t) < it.second }) {
-                t--
-                continue
+            for (m in 0..<_relevantUpdateAreas.size) {
+                val l = _relevantUpdateAreas.getLong(m)
+                val s = (l ushr 32).toInt()
+                val e = l.toInt()
+                if (!((s - start) % t == 0 || s + (t - (s - start) % t) < e)) {
+                    t--
+                    continue
+                }
             }
 
             var valid = true
@@ -642,7 +698,25 @@ class LocalPacketOptimizer() {
                             return@check
                         }
 
-                        val q = Quaternion(s.rot.x, s.rot.y, s.rot.z, s.rot.w).nlerp(e.rot, f)
+                        k++
+                    }
+
+                    j += t
+                }
+
+                // rotation checks are expensive so we do them after, in case everything else seems good
+                var i = start
+                while (i < end) {
+                    // test all points (i + 1)..<(i + t)
+                    val s = displayData[i]
+                    val e = displayData[i + t]
+
+                    var k = i + 1
+                    while (k < i + t) {
+                        val f = (k - i) / t.toDouble()
+                        val p = displayData[k]
+                        
+                        val q = _quat.set(s.rot.x, s.rot.y, s.rot.z, s.rot.w).nlerp(e.rot, f)
                         val rd = p.rotDistance(q)
 
                         if (rd > rotTolerance) {
@@ -653,7 +727,7 @@ class LocalPacketOptimizer() {
                         k++
                     }
 
-                    j += t
+                    i += t
                 }
             }
 
@@ -666,4 +740,11 @@ class LocalPacketOptimizer() {
 
         return 1
     }
+}
+
+fun distance(
+    a: Double, b: Double, c: Double,
+    x: Double, y: Double, z: Double,
+): Double {
+    return sqrt((a - x) * (a - x) + (b - y) * (b - y) + (c - z) * (c - z))
 }
